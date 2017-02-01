@@ -181,6 +181,7 @@
 # 2017-01-18 issue #228 check private key and account key are different (2.05)
 # 2017-01-21 issue #231 mingw bugfix and typos in debug messages (2.06)
 # 2017-01-24 bash fix redhat 6/7 (EOF)
+# 2017-02-01 path variables for IT.NRW usage
 # ----------------------------------------------------------------------------------------
 
 PROGNAME=${0##*/}
@@ -195,13 +196,14 @@ CHALLENGE_CHECK_TYPE="http"
 CHECK_ALL_AUTH_DNS="false"
 CHECK_REMOTE="true"
 CHECK_REMOTE_WAIT=0
-CODE_LOCATION="https://raw.githubusercontent.com/srvrco/getssl/master/getssl"
+CODE_LOCATION="https://raw.githubusercontent.com/emphazer/getssl/master/getssl"
 CSR_SUBJECT="/"
 DEACTIVATE_AUTH="false"
 DEFAULT_REVOKE_CA="https://acme-v01.api.letsencrypt.org"
 DNS_EXTRA_WAIT=""
 DNS_WAIT=10
 DOMAIN_KEY_LENGTH=4096
+DOMAIN_STORAGE=/etc/pki/tls/getssl/domain
 DUAL_RSA_ECDSA="false"
 GETSSL_IGNORE_CP_PRESERVE="false"
 HTTP_TOKEN_CHECK_WAIT=0
@@ -220,7 +222,7 @@ TEMP_UPGRADE_FILE=""
 TOKEN_USER_ID=""
 USE_SINGLE_ACL="false"
 VALIDATE_VIA_DNS=""
-WORKING_DIR=~/.getssl
+WORKING_DIR=/etc/getssl
 _CHECK_ALL=0
 _CREATE_CONFIG=0
 _FORCE_RENEW=0
@@ -242,8 +244,8 @@ ORIGCMD="$0 $*"
 cert_archive() {  # Archive certificate file by copying files to dated archive dir.
   debug "creating an achive copy of current new certs"
   date_time=$(date +%Y_%m_%d_%H_%M)
-  mkdir -p "${DOMAIN_DIR}/archive/${date_time}"
   umask 077
+  mkdir -p "${DOMAIN_DIR}/archive/${date_time}"
   cp "$CERT_FILE" "${DOMAIN_DIR}/archive/${date_time}/${DOMAIN}.crt"
   cp "$DOMAIN_DIR/${DOMAIN}.csr" "${DOMAIN_DIR}/archive/${date_time}/${DOMAIN}.csr"
   cp "$DOMAIN_DIR/${DOMAIN}.key" "${DOMAIN_DIR}/archive/${date_time}/${DOMAIN}.key"
@@ -415,7 +417,7 @@ check_config() { # check the config files for all obvious errors
 
 check_getssl_upgrade() { # check if a more recent version of code is available available
   TEMP_UPGRADE_FILE="$(mktemp)"
-  curl --silent "$CODE_LOCATION" --output "$TEMP_UPGRADE_FILE"
+  curl --connect-timeout 5 --silent "$CODE_LOCATION" --output "$TEMP_UPGRADE_FILE"
   errcode=$?
   if [[ $errcode -eq 60 ]]; then
     error_exit "curl needs updating, your version does not support SNI (multiple SSL domains on a single IP)"
@@ -1258,7 +1260,9 @@ usage() { # echos out the program usage
        "[-Q|--mute] [-u|--upgrade] [-k|--keep #] [-U|--nocheck] [-r|--revoke cert key] [-w working_dir] domain"
 }
 
+
 write_domain_template() { # write out a template file for a domain.
+DOMAIN_HOME=`echo ${DOMAIN} | sed 's/^www\.//;s/\.nrw\.de$//'`
   cat > "$1" <<- EOD
         # Uncomment and modify any variables you need
         # see https://github.com/srvrco/getssl/wiki/Config-variables for details
@@ -1283,19 +1287,19 @@ write_domain_template() { # write out a template file for a domain.
         # If these start with ftp: then the next variables are ftpuserid:ftppassword:servername:ACL_location
         # These should be of the form "/path/to/your/website/folder/.well-known/acme-challenge"
         # where "/path/to/your/website/folder/" is the path, on your web server, to the web root for your domain.
-        #ACL=('/var/www/${DOMAIN}/web/.well-known/acme-challenge'
-        #     'ssh:server5:/var/www/${DOMAIN}/web/.well-known/acme-challenge'
-        #     'ssh:sshuserid@server5:/var/www/${DOMAIN}/web/.well-known/acme-challenge'
-        #     'ftp:ftpuserid:ftppassword:${DOMAIN}:/web/.well-known/acme-challenge')
+        ACL=('/var/www/htdocs/${DOMAIN_HOME}/docroot/.well-known/acme-challenge')
+        #     'ssh:server5:/var/www/htdocs/${DOMAIN_HOME}/docroot/.well-known/acme-challenge'
+        #     'ssh:sshuserid@server5:/var/www/htdocs/${DOMAIN_HOME}/docroot/.well-known/acme-challenge'
+        #     'ftp:ftpuserid:ftppassword:${DOMAIN_HOME}:/docroot/.well-known/acme-challenge')
 
         #Set USE_SINGLE_ACL="true" to use a single ACL for all checks
         #USE_SINGLE_ACL="false"
 
         # Location for all your certs, these can either be on the server (full path name)
         # or using ssh /sftp as for the ACL
-        DOMAIN_CERT_LOCATION="/etc/pki/tls/certs/${DOMAIN}.crt"
-        DOMAIN_KEY_LOCATION="/etc/pki/tls/private/${DOMAIN}.key"
-        CA_CERT_LOCATION="/etc/pki/tls/certs/${DOMAIN}-letsencrypt-chain.crt"
+        DOMAIN_CERT_LOCATION="/etc/pki/tls/certs/letsencrypt/${DOMAIN}.crt"
+        DOMAIN_KEY_LOCATION="/etc/pki/tls/private/letsencrypt/${DOMAIN}.key"
+        CA_CERT_LOCATION="/etc/pki/tls/certs/letsencrypt/${DOMAIN}-chain.crt"
         #DOMAIN_CHAIN_LOCATION="" # this is the domain cert and CA cert
         #DOMAIN_PEM_LOCATION="" # this is the domain_key, domain cert and CA cert
 
@@ -1324,7 +1328,7 @@ write_getssl_template() { # write out the main template file
         #AGREEMENT="$AGREEMENT"
 
         # Set an email address associated with your account - generally set at account level rather than domain.
-        #ACCOUNT_EMAIL="me@example.com"
+        ACCOUNT_EMAIL="webhosting@it.nrw.de"
         ACCOUNT_KEY_LENGTH=4096
         ACCOUNT_KEY="$WORKING_DIR/account.key"
         PRIVATE_KEY_ALG="rsa"
@@ -1471,6 +1475,7 @@ fi
 if [[ ! -d "$WORKING_DIR" ]]; then
   debug "Making working directory - $WORKING_DIR"
   mkdir -p "$WORKING_DIR"
+  chmod og-rwx "$WORKING_DIR"
 fi
 
 # read any variables from config in working directory
