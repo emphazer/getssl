@@ -203,7 +203,7 @@ DEFAULT_REVOKE_CA="https://acme-v01.api.letsencrypt.org"
 DNS_EXTRA_WAIT=""
 DNS_WAIT=10
 DOMAIN_KEY_LENGTH=4096
-DOMAIN_STORAGE=/etc/pki/tls/getssl/domain
+DOMAIN_STORAGE=$(openssl version -d 2>/dev/null| cut -d\" -f2)/getssl/domain
 DUAL_RSA_ECDSA="false"
 GETSSL_IGNORE_CP_PRESERVE="false"
 HTTP_TOKEN_CHECK_WAIT=0
@@ -1328,7 +1328,7 @@ write_getssl_template() { # write out the main template file
         #AGREEMENT="$AGREEMENT"
 
         # Set an email address associated with your account - generally set at account level rather than domain.
-        ACCOUNT_EMAIL="webhosting@it.nrw.de"
+        #ACCOUNT_EMAIL="mail@localhost"
         ACCOUNT_KEY_LENGTH=4096
         ACCOUNT_KEY="$WORKING_DIR/account.key"
         PRIVATE_KEY_ALG="rsa"
