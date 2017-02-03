@@ -188,8 +188,6 @@ PROGNAME=${0##*/}
 VERSION="2.06"
 
 # defaults
-HTTPDCONFD="/etc/httpd/conf.d"
-LECONF="$HTTPDCONFD/letsencrypt.conf"
 ACCOUNT_KEY_LENGTH=4096
 ACCOUNT_KEY_TYPE="rsa"
 CA="https://acme-staging.api.letsencrypt.org"
@@ -419,14 +417,12 @@ check_config() { # check the config files for all obvious errors
 
 check_getssl_upgrade() { # check if a more recent version of code is available available
   TEMP_UPGRADE_FILE="$(mktemp)"
-  #curl --connect-timeout 5 --silent "$CODE_LOCATION" --output "$TEMP_UPGRADE_FILE"
-  echo 
+  curl --connect-timeout 5 --silent "$CODE_LOCATION" --output "$TEMP_UPGRADE_FILE"
   errcode=$?
   if [[ $errcode -eq 60 ]]; then
     error_exit "curl needs updating, your version does not support SNI (multiple SSL domains on a single IP)"
   elif [[ $errcode -gt 0 ]]; then
-    echo
-    #error_exit "curl error : $errcode"
+    error_exit "curl error : $errcode"
   fi
   latestversion=$(awk -F '"' '$1 == "VERSION=" {print $2}' "$TEMP_UPGRADE_FILE")
   latestvdec=$(echo "$latestversion"| tr -d '.')
@@ -619,24 +615,6 @@ create_csr() { # create a csr using a given key (if it doesn't already exist)
     printf "[SAN]\n%s" "$SANLIST" >> "$tmp_conf"
     openssl req -new -sha256 -key "$csr_key" -subj "$CSR_SUBJECT" -reqexts SAN -config "$tmp_conf" > "$csr_file"
     rm -f "$tmp_conf"
-  fi
-}
-
-create_httpd_conf() {
-  # generate httpd config file
-  if [ -d "$HTTPDCONFD" ]; then
-        if [ ! -f "$LECONF" ]; then
-                cat > "$LECONF" << "EOD"
-        <IfModule alias_module>
-            Alias /.well-known/acme-challenge /var/www/html/letsencrypt/.well-known/acme-challenge
-        </IfModule>
-        <Directory "/var/www/html/letsencrypt/.well-known/acme-challenge">
-            AllowOverride None
-            Options None
-        </Directory>
-EOD
-        error_exit "please run a httpd graceful"
-        fi
   fi
 }
 
@@ -971,15 +949,6 @@ info() { # write out info as long as the quiet flag has not been set.
   fi
 }
 
-firewall() {
-if iptables-save | grep -q ^"\-[A-Z]\ \(INPUT\|OUTPUT\)"; then 
-        LE_IPS=$(dig $CA acme-v01.api.letsencrypt.org acme-staging.api.letsencrypt.org +short |sed 's/\.$//'| awk \!'x[$0]++')
-        for LE_IP in $LE_IPS; do
-                iptables -I OUTPUT -d $LE_IP/32 -p tcp -m state --state NEW -m tcp --dport 443 -j ACCEPT
-        done
-fi
-}
-
 json_get() { # get the value corresponding to $2 in the JSON passed as $1.
   # remove newlines, so it's a single chunk of JSON
   json_data=$( echo "$1" | tr '\n' ' ')
@@ -1308,7 +1277,7 @@ DOMAIN_HOME=`echo ${DOMAIN} | sed 's/^www\.//;s/\.nrw\.de$//'`
 
         # Additional domains - this could be multiple domains / subdomains in a comma separated list
         # Note: this is Additional domains - so should not include the primary domain.
-        #SANS="${EX_SANS}"
+        SANS="${EX_SANS}"
 
         # Acme Challenge Location. The first line for the domain, the following ones for each additional domain.
         # If these start with ssh: then the next variable is assumed to be the hostname and the rest the location.
@@ -1318,8 +1287,7 @@ DOMAIN_HOME=`echo ${DOMAIN} | sed 's/^www\.//;s/\.nrw\.de$//'`
         # If these start with ftp: then the next variables are ftpuserid:ftppassword:servername:ACL_location
         # These should be of the form "/path/to/your/website/folder/.well-known/acme-challenge"
         # where "/path/to/your/website/folder/" is the path, on your web server, to the web root for your domain.
-        #ACL=('/var/www/htdocs/${DOMAIN_HOME}/docroot/.well-known/acme-challenge')
-        ACL=('/var/www/html/letsencrypt/.well-known/acme-challenge')
+        ACL=('/var/www/htdocs/${DOMAIN_HOME}/docroot/.well-known/acme-challenge')
         #     'ssh:server5:/var/www/htdocs/${DOMAIN_HOME}/docroot/.well-known/acme-challenge'
         #     'ssh:sshuserid@server5:/var/www/htdocs/${DOMAIN_HOME}/docroot/.well-known/acme-challenge'
         #     'ftp:ftpuserid:ftppassword:${DOMAIN_HOME}:/docroot/.well-known/acme-challenge')
@@ -1360,7 +1328,7 @@ write_getssl_template() { # write out the main template file
         #AGREEMENT="$AGREEMENT"
 
         # Set an email address associated with your account - generally set at account level rather than domain.
-        #ACCOUNT_EMAIL="root@localhost"
+        #ACCOUNT_EMAIL="mail@localhost"
         ACCOUNT_KEY_LENGTH=4096
         ACCOUNT_KEY="$WORKING_DIR/account.key"
         PRIVATE_KEY_ALG="rsa"
@@ -1399,11 +1367,6 @@ EOD
 # Trap signals
 trap "signal_exit TERM" TERM HUP
 trap "signal_exit INT"  INT
-
-# check if httpd conf file exists. if not create it.
-create_httpd_conf
-# Check Firewall
-firewall
 
 # Parse command-line
 while [[ -n ${1+defined} ]]; do
@@ -2187,8 +2150,6 @@ fi
 # Use echo rather than info so that 'quiet' is ignored.
 echo "certificate obtained for ${DOMAIN}"
 
-
 # gracefully exit ( tidying up temporary files etc).
 graceful_exit
-
 
