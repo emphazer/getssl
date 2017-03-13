@@ -625,6 +625,9 @@ create_csr() { # create a csr using a given key (if it doesn't already exist)
 create_httpd_conf() {
   # generate httpd config file
   if [ -d "$HTTPDCONFD" ]; then
+        if ! grep -q "well-known/acme-challenge/" "$HTTPDCONFD/00_basic_security.conf" ; then 
+             sed -i  's@    RewriteCond %{SCRIPT_FILENAME} -f@&\n    RewriteCond %{REQUEST_URI} !^/.well-known/acme-challenge/.*@' "$HTTPDCONFD/00_basic_security.conf"
+        fi
         if [ ! -f "$LECONF" ]; then
                 cat > "$LECONF" << "EOD"
         <IfModule alias_module>
