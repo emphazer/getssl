@@ -187,6 +187,21 @@
 PROGNAME=${0##*/}
 VERSION="2.06"
 
+if [ "$(id -u)" != "0" ]; then
+   echo -e '\033[0;31m'
+   echo "This script must be run as root" 2>&1
+   echo -e '\033[0;0m' && exit 1
+fi
+
+_CANON_NAME="$(readlink -f ${BASH_SOURCE[0]} 2>/dev/null)"
+_CANON_BASE="$(dirname $_CANON_NAME 2>/dev/null)"
+_CANON_BASENAME="$(basename $_CANON_NAME)"
+
+if [ ! "$_CANON_NAME"  == "/root/bin/getssl" ]; then
+   test -d /root/bin || mkdir /root/bin
+   cat  "$_CANON_NAME" > /root/bin/getssl && chmod +x /root/bin/getssl
+fi
+
 # defaults
 HTTPDCONFD="/etc/httpd/conf.d"
 LECONF="$HTTPDCONFD/letsencrypt.conf"
