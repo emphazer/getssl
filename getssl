@@ -182,6 +182,7 @@
 # 2017-01-21 issue #231 mingw bugfix and typos in debug messages (2.06)
 # 2017-01-24 bash fix redhat 6/7 (EOF)
 # 2017-02-01 path variables for IT.NRW usage
+# 2017-03-14 cron creation and central acme challenges
 # ----------------------------------------------------------------------------------------
 
 PROGNAME=${0##*/}
@@ -191,15 +192,6 @@ if [ "$(id -u)" != "0" ]; then
    echo -e '\033[0;31m'
    echo "This script must be run as root" 2>&1
    echo -e '\033[0;0m' && exit 1
-fi
-
-_CANON_NAME="$(readlink -f ${BASH_SOURCE[0]} 2>/dev/null)"
-_CANON_BASE="$(dirname $_CANON_NAME 2>/dev/null)"
-_CANON_BASENAME="$(basename $_CANON_NAME)"
-
-if [ ! "$_CANON_NAME"  == "/root/bin/getssl" ]; then
-   test -d /root/bin || mkdir /root/bin
-   cat  "$_CANON_NAME" > /root/bin/getssl && chmod +x /root/bin/getssl
 fi
 
 # defaults
@@ -214,6 +206,9 @@ CHECK_ALL_AUTH_DNS="false"
 CHECK_REMOTE="true"
 CHECK_REMOTE_WAIT=0
 CODE_LOCATION="https://raw.githubusercontent.com/emphazer/getssl/master/getssl"
+CRON_TIME="0 3 * * *"
+CRON_CALL="/root/bin/getssl -a"
+CRON_LOG="/var/log/getssl.log"
 CSR_SUBJECT="/"
 DEACTIVATE_AUTH="false"
 DEFAULT_REVOKE_CA="https://acme-v01.api.letsencrypt.org"
@@ -252,6 +247,11 @@ _UPGRADE=0
 _UPGRADE_CHECK=1
 _USE_DEBUG=0
 config_errors="false"
+
+# Quelle des Skripts
+_CANON_NAME="$(readlink -f ${BASH_SOURCE[0]} 2>/dev/null)"
+_CANON_BASE="$(dirname $_CANON_NAME 2>/dev/null)"
+_CANON_BASENAME="$(basename $_CANON_NAME)"
 
 # store copy of original command in case of upgrading script and re-running
 ORIGCMD="$0 $*"
@@ -653,7 +653,7 @@ create_httpd_conf() {
             Options None
         </Directory>
 EOD
-        error_exit "please run a httpd graceful"
+        error_exit "$LECONF has been created. please run a httpd -k graceful"
         fi
   fi
 }
@@ -995,8 +995,37 @@ if iptables-save | grep -q ^"\-[A-Z]\ \(INPUT\|OUTPUT\)"; then
         for LE_IP in $LE_IPS; do
                 iptables -I OUTPUT -d $LE_IP/32 -p tcp -m state --state NEW -m tcp --dport 443 -j ACCEPT
         done
+        for LE_IP in $DOMAIN; do
+                iptables -I OUTPUT -d $LE_IP/32 -p tcp -m state --state NEW -m tcp --dport 80  -j ACCEPT
+                iptables -I OUTPUT -d $LE_IP/32 -p tcp -m state --state NEW -m tcp --dport 443 -j ACCEPT
+        done
+        
 fi
 }
+
+make_cron() {
+CRON_FILE="${CRON_CALL// *}"
+[ -z "$CRON_FILE" ] && echo "Variable \$CRON_CALL darf kein Leerzeichen am Anfang haben!" && exit 1
+if [ ! "$_CANON_NAME"  == "$CRON_FILE" ]; then
+   if [ -e $CRON_FILE ]; then
+      echo "Bitte $CRON_FILE (cron) gegebenenfalls updaten!"
+   else
+      mkdir -p "${CRON_FILE%/*}"
+      cat  "$_CANON_NAME" > $CRON_FILE && chmod +x $CRON_FILE
+   fi
+fi
+  # add cron to /var/spool/cron/root
+CRON_LINE="$CRON_TIME $CRON_CALL 2>&1 >>$CRON_LOG"
+if ! grep -qwe "getssl" /var/spool/cron/root; then
+   info "creating cron"
+   echo "### getssl (Let's Encrypt)
+$CRON_LINE
+" >> /var/spool/cron/root
+elif ! grep -qe "${CRON_LINE//\*/\*}" /var/spool/cron/root;then
+   echo "Cron hat sich eventuell geändert!"
+fi
+}
+
 
 json_get() { # get the value corresponding to $2 in the JSON passed as $1.
   # remove newlines, so it's a single chunk of JSON
@@ -1420,8 +1449,8 @@ trap "signal_exit INT"  INT
 
 # check if httpd conf file exists. if not create it.
 create_httpd_conf
-# Check Firewall
-firewall
+# create cron if it doesnt exist
+make_cron
 
 # Parse command-line
 while [[ -n ${1+defined} ]]; do
@@ -1474,6 +1503,9 @@ done
 
 # Main logic
 ############
+
+# Check Firewall
+firewall
 
 # Get the current OS, so the correct functions can be used for that OS. (sets the variable os)
 get_os
@@ -1615,7 +1647,7 @@ if [[ ${_CREATE_CONFIG} -eq 1 ]]; then
     info "creating domain config file in $DOMAIN_DIR/getssl.cfg"
     # if domain has an existing cert, copy from domain and use to create defaults.
     EX_CERT=$(echo \
-      | openssl s_client -servername "${DOMAIN}" -connect "${DOMAIN}:443" 2>/dev/null \
+      | timeout 5 openssl s_client -servername "${DOMAIN}" -connect "${DOMAIN}:443" 2>/dev/null \
       | openssl x509 2>/dev/null)
     EX_SANS="www.${DOMAIN}"
     if [[ ! -z "${EX_CERT}" ]]; then
@@ -1675,7 +1707,7 @@ if [[ "${CHECK_REMOTE}" == "true" ]] && [[ $_FORCE_RENEW -eq 0 ]]; then
   debug "getting certificate for $DOMAIN from remote server"
   # shellcheck disable=SC2086
   EX_CERT=$(echo \
-    | openssl s_client -servername "${DOMAIN}" -connect "${DOMAIN}:${REMOTE_PORT}" ${REMOTE_EXTRA} 2>/dev/null \
+    | timeout 5 openssl s_client -servername "${DOMAIN}" -connect "${DOMAIN}:${REMOTE_PORT}" ${REMOTE_EXTRA} 2>/dev/null \
     | openssl x509 2>/dev/null)
   if [[ ! -z "$EX_CERT" ]]; then # if obtained a cert
     if [[ -s "$CERT_FILE" ]]; then # if local exists
@@ -2190,12 +2222,18 @@ if [[ ${CHECK_REMOTE} == "true" ]]; then
   sleep "$CHECK_REMOTE_WAIT"
   # shellcheck disable=SC2086
   CERT_REMOTE=$(echo \
-    | openssl s_client -servername "${DOMAIN}" -connect "${DOMAIN}:${REMOTE_PORT}" ${REMOTE_EXTRA} 2>/dev/null \
+    | timeout 5 openssl s_client -servername "${DOMAIN}" -connect "${DOMAIN}:${REMOTE_PORT}" ${REMOTE_EXTRA} 2>/dev/null \
     | openssl x509 -noout -fingerprint 2>/dev/null)
   CERT_LOCAL=$(openssl x509 -noout -fingerprint < "$CERT_FILE" 2>/dev/null)
   if [[ "$CERT_LOCAL" == "$CERT_REMOTE" ]]; then
     info "${DOMAIN} - certificate installed OK on server"
   else
+    info "Zeilen für die SSL-Vhost-Conf:
+
+SSLCertificateFile      $DOMAIN_CERT_LOCATION
+SSLCertificateKeyFile   $DOMAIN_KEY_LOCATION
+SSLCertificateChainFile $CA_CERT_LOCATION
+"
     error_exit "${DOMAIN} - certificate obtained but certificate on server is different from the new certificate"
   fi
 fi
@@ -2208,5 +2246,4 @@ echo "certificate obtained for ${DOMAIN}"
 
 # gracefully exit ( tidying up temporary files etc).
 graceful_exit
-
 
