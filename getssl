@@ -183,6 +183,7 @@
 # 2017-01-24 bash fix redhat 6/7 (EOF)
 # 2017-02-01 path variables for IT.NRW usage
 # 2017-03-14 cron creation and central acme challenges
+# 2017-03-27 changed cron to avoid rate limits and changed default USE_SINGLE_ACL
 # ----------------------------------------------------------------------------------------
 
 PROGNAME=${0##*/}
