@@ -206,7 +206,7 @@ CHECK_ALL_AUTH_DNS="false"
 CHECK_REMOTE="true"
 CHECK_REMOTE_WAIT=0
 CODE_LOCATION="https://raw.githubusercontent.com/emphazer/getssl/master/getssl"
-CRON_TIME="0 3 * * *"
+CRON_TIME="0 3 1 * *"
 CRON_CALL="/root/bin/getssl -a"
 CRON_LOG="/var/log/getssl.log"
 CSR_SUBJECT="/"
@@ -1372,7 +1372,7 @@ DOMAIN_HOME=`echo ${DOMAIN} | sed 's/^www\.//;s/\.nrw\.de$//'`
         #     'ftp:ftpuserid:ftppassword:${DOMAIN_HOME}:/docroot/.well-known/acme-challenge')
 
         #Set USE_SINGLE_ACL="true" to use a single ACL for all checks
-        #USE_SINGLE_ACL="false"
+        USE_SINGLE_ACL="true"
 
         # Location for all your certs, these can either be on the server (full path name)
         # or using ssh /sftp as for the ACL
@@ -1417,7 +1417,7 @@ write_getssl_template() { # write out the main template file
         #RELOAD_CMD=""
         # The time period within which you want to allow renewal of a certificate
         #  this prevents hitting some of the rate limits.
-        RENEW_ALLOW="30"
+        RENEW_ALLOW="40"
 
         # Define the server type. This can be https, ftp, ftpi, imap, imaps, pop3, pop3s, smtp,
         # smtps_deprecated, smtps, smtp_submission, xmpp, xmpps, ldaps or a port number which
